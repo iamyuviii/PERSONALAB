@@ -1,5 +1,6 @@
 "use client";
 import type { ResearchInput } from "@/lib/types";
+import { ScrambleButton } from "./ui";
 
 export function SetupView({
   input,
@@ -137,9 +138,12 @@ export function SetupView({
           <b>Research engine</b>
           <small>· Uses Groq when configured; otherwise runs locally</small>
         </div>
-        <button className="button lime" disabled={running} onClick={onRun}>
-          {running ? "Building panel…" : "Generate research panel →"}
-        </button>
+        <ScrambleButton
+          className="button lime"
+          disabled={running}
+          onClick={onRun}
+          text={running ? "Building panel..." : "Generate research panel ->"}
+        />
       </div>
     </div>
   );

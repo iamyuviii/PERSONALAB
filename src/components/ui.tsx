@@ -1,5 +1,5 @@
 "use client";
-import { type ButtonHTMLAttributes, useEffect, useRef, useState } from "react";
+import { type ButtonHTMLAttributes, type CSSProperties, useEffect, useRef, useState } from "react";
 
 // ── Text Scramble Effects ───────────────────────────────────────────────────
 
@@ -29,6 +29,82 @@ export function Scramble({ text }: { text: string }) {
   return (
     <span className="scramble" aria-label={text}>
       {shown}
+    </span>
+  );
+}
+
+export function BlockScrambleText({ text, className = "" }: { text: string; className?: string }) {
+  const [shown, setShown] = useState(text);
+  const [isHighlighted, setIsHighlighted] = useState(false);
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const blocksRef = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsHighlighted(true);
+            // Scramble Text
+            let frame = 0;
+            const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            const timer = window.setInterval(() => {
+              frame += 0.7;
+              setShown(
+                text
+                  .split("")
+                  .map((character, index) =>
+                    index < frame
+                      ? character
+                      : character === " "
+                        ? " "
+                        : chars[Math.floor(Math.random() * chars.length)]
+                  )
+                  .join("")
+              );
+              if (frame >= text.length) window.clearInterval(timer);
+            }, 35);
+
+            // Animate Blocks
+            blocksRef.current.forEach((block) => {
+              if (block) {
+                block.classList.remove("animate");
+                void block.offsetWidth; // trigger reflow
+                block.style.animationDelay = Math.random() * 0.6 + "s";
+                block.classList.add("animate");
+              }
+            });
+
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.35 }
+    );
+
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [text]);
+
+  return (
+    <span className={`text-wrapper-block ${className}`} ref={containerRef}>
+      <span
+        className="text relative z-10 inline-block px-1 transition-colors duration-500"
+        style={{ color: isHighlighted ? "#11120f" : "inherit" }}
+      >
+        {shown}
+      </span>
+      <div className="overlay z-0">
+        {Array.from({ length: 52 }).map((_, i) => (
+          <div
+            key={i}
+            className="block"
+            ref={(el) => {
+              blocksRef.current[i] = el;
+            }}
+          />
+        ))}
+      </div>
     </span>
   );
 }
@@ -67,6 +143,9 @@ export function useHoverScramble(text: string) {
     },
     []
   );
+  useEffect(() => {
+    setShown(text);
+  }, [text]);
   return { shown, start };
 }
 
@@ -77,6 +156,7 @@ export function HoverScramble({ text }: { text: string }) {
       className="hover-scramble"
       onMouseEnter={start}
       onFocus={start}
+      style={{ "--scramble-chars": text.length } as CSSProperties}
       tabIndex={0}
     >
       {shown}
@@ -88,6 +168,7 @@ export function ScrambleButton({
   text,
   className = "",
   children,
+  style,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { text: string }) {
   const { shown, start } = useHoverScramble(text);
@@ -96,6 +177,7 @@ export function ScrambleButton({
       className={`scramble-button ${className}`}
       onMouseEnter={start}
       onFocus={start}
+      style={{ ...style, "--scramble-chars": text.length } as CSSProperties}
       {...props}
     >
       <span className="hover-scramble">{shown}</span>

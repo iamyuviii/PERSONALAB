@@ -7,7 +7,7 @@ import { SetupView } from "./setup-view";
 import { PanelView } from "./panel-view";
 import { SimulationsView } from "./simulations-view";
 import { ReportView } from "./report-view";
-import { AuditTrail } from "./ui";
+import { AuditTrail, HoverScramble, ScrambleButton } from "./ui";
 
 type View = "home" | "setup" | "panel" | "simulations" | "report";
 
@@ -77,50 +77,6 @@ export function PersonaLabApp() {
       mutate();
     }
   }, [currentProject, mutate]);
-
-  // Text scramble effect on hover (applied globally)
-  useEffect(() => {
-    const selector =
-      ".side-nav,.help,.icon-button,.run-bar .button,.persona-head .button,.signal-strip button,.report-top .button,.method-note button";
-    const onHover = (event: PointerEvent) => {
-      const button = (event.target as HTMLElement).closest(
-        selector
-      ) as HTMLElement | null;
-      if (
-        !button ||
-        (event.relatedTarget instanceof Node &&
-          button.contains(event.relatedTarget))
-      )
-        return;
-      const original =
-        button.dataset.scrambleText || button.textContent?.trim();
-      if (!original || button.dataset.scrambling === "true") return;
-      button.dataset.scrambleText = original;
-      button.dataset.scrambling = "true";
-      let frame = 0;
-      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%";
-      const timer = window.setInterval(() => {
-        frame++;
-        button.textContent = original
-          .split("")
-          .map((character, index) =>
-            index < frame
-              ? character
-              : character === " "
-                ? " "
-                : chars[Math.floor(Math.random() * chars.length)]
-          )
-          .join("");
-        if (frame > original.length) {
-          window.clearInterval(timer);
-          button.textContent = original;
-          button.dataset.scrambling = "false";
-        }
-      }, 21);
-    };
-    document.addEventListener("pointerover", onHover);
-    return () => document.removeEventListener("pointerover", onHover);
-  }, []);
 
   const save = (nextInput: ResearchInput, nextResult: ResearchResult | null) => {
     saveToDb(nextInput, nextResult);
@@ -195,7 +151,7 @@ export function PersonaLabApp() {
             onClick={() => go(n.id)}
           >
             <span>{n.num}</span>
-            {n.label}
+            <HoverScramble text={n.label} />
             {n.id === "report" && result && <i>●</i>}
           </button>
         ))}
@@ -215,11 +171,14 @@ export function PersonaLabApp() {
               className="help"
               onClick={() => setAuditOpen(true)}
             >
-              ⊞ View audit trail ({result.auditTrail.length} stages)
+              ⊞{" "}
+              <HoverScramble
+                text={`View audit trail (${result.auditTrail.length} stages)`}
+              />
             </button>
           )}
           <button className="help" onClick={() => go("setup")}>
-            Edit research brief
+            <HoverScramble text="Edit research brief" />
           </button>
         </div>
       </aside>
@@ -241,9 +200,11 @@ export function PersonaLabApp() {
             </h2>
           </div>
           <div className="head-actions">
-            <button className="icon-button" onClick={() => go("setup")}>
-              Edit
-            </button>
+            <ScrambleButton
+              className="icon-button"
+              onClick={() => go("setup")}
+              text="Edit"
+            />
             <button className="avatar">YR</button>
           </div>
         </header>

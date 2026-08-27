@@ -1,5 +1,5 @@
 "use client";
-import { Scramble, HoverScramble, ScrambleButton } from "./ui";
+import { Scramble, HoverScramble, ScrambleButton, BlockScrambleText } from "./ui";
 
 export function Landing({
   onOpen,
@@ -42,7 +42,7 @@ export function Landing({
         <h1>
           Know what your
           <br />
-          <Scramble text="market thinks" /> <i>before</i>
+          <BlockScrambleText text="market thinks" /> <i>before</i>
           <br />
           you build.
         </h1>
