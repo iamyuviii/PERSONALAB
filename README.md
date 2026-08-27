@@ -83,9 +83,3 @@ Use PersonaLab to decide what to test next with real people — not to make clai
 | Mock provider as default | Deterministic, reproducible, free. Live provider works end-to-end when toggled. |
 | Simulated variance label in UI | Names the limit before the interviewer does. Senior move, not naive. |
 
-## Resume bullets
-
-- Built PersonaLab AI, an evidence-calibrated synthetic research platform with a 7-stage auditable pipeline, retrieval-based persona grounding, and confidence-bounded reporting.
-- Designed a provider-agnostic AI architecture where independent per-persona simulation calls, Zod-validated stages, and deterministic recommendation derivation produce auditable, non-anchored results.
-- Implemented keyword-based evidence retrieval ensuring citation traceability by construction — personas can only cite evidence that was actually injected into their prompt context.
-- Created a dual-provider system (deterministic mock + live Groq) sharing the same validated pipeline, enabling zero-cost demos and real AI generation through identical code paths.
