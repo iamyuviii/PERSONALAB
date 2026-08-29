@@ -209,25 +209,27 @@ export const average = (
 // ── Confidence Badge ────────────────────────────────────────────────────────
 
 export function ConfidenceBadge({
-  confidence,
+  evidenceCoverage,
   disagreement,
   evidenceCount,
 }: {
-  confidence: number;
+  evidenceCoverage: number;
   disagreement?: number;
   evidenceCount?: number;
 }) {
   return (
     <div className="confidence-badge">
       <div className="confidence-ring">
-        <b>{confidence}</b>
+        <b>{evidenceCoverage}</b>
       </div>
       <div className="confidence-info">
         <span>
-          Evidence confidence
-          <br />
+          Evidence Coverage
+          <span className="variance-tooltip" style={{ display: 'block', marginTop: '4px', opacity: 0.8 }}>
+            How much grounding evidence this panel had, not confidence in the results.
+          </span>
           <small>
-            {confidence >= 70 ? "Strong" : confidence >= 45 ? "Moderate" : "Limited"} ·{" "}
+            {evidenceCoverage >= 70 ? "Strong" : evidenceCoverage >= 45 ? "Moderate" : "Limited"} ·{" "}
             {evidenceCount ?? "?"} source signals
           </small>
         </span>

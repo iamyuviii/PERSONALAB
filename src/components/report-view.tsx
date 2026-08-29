@@ -13,32 +13,57 @@ export function ReportView({
   onRestart: () => void;
   onShowAudit: () => void;
 }) {
-  const people = result.personas;
+  const allPeople = result.personas;
+  const people = allPeople.filter(p => !p.degraded);
   const metrics = result.metrics;
   const clusters = result.objectionClusters || [];
+
+  const degradedCount = metrics?.degradedCount ?? 0;
+  const totalPersonaCount = metrics?.totalPersonaCount ?? allPeople.length;
 
   const intent = metrics?.purchaseIntent.mean ?? average(people, "purchase_intent");
   const clarity = metrics?.clarity.mean ?? average(people, "clarity_score");
   const trust = metrics?.trust.mean ?? average(people, "trust_score");
   const disagreement = metrics?.disagreementScore ?? computeDisagreement(people);
-  const confidence = result.confidence;
+  const evidenceCoverage = result.evidenceCoverage;
 
-  const objectionRows = clusters.length > 0
-    ? clusters
+  if (totalPersonaCount > 0 && degradedCount / totalPersonaCount > 0.2) {
+    return (
+      <div className="page report" style={{ alignItems: "center", justifyContent: "center", textAlign: "center", paddingTop: "20vh" }}>
+        <h2>Research Run Failed</h2>
+        <p style={{ maxWidth: 400, margin: "1rem auto", color: "var(--text-muted)" }}>
+          {degradedCount} of {totalPersonaCount} personas failed to generate. This usually indicates an API issue, rate limit, or format mismatch.
+        </p>
+        <button className="button lime" onClick={onRestart}>Try again</button>
+      </div>
+    );
+  }
+
+  const assignedRows = clusters.length > 0
+    ? clusters.filter((c: any) => c.mode === "assigned" || !c.mode)
     : result.signals.objections.map((label, i) => ({
       label,
       percentage: Math.round(
         (people.filter((p) => p.score.objection_category === label).length /
-          people.length) *
+          (people.length || 1)) *
           100
       ),
       color: ["#d9ff5a", "#9b8cff", "#65d6ff", "#ff9a62"][i % 4],
     }));
 
+  const openRows = clusters.length > 0
+    ? clusters.filter((c: any) => c.mode === "open")
+    : [];
+
   const bars = people.map((p) => p.score.purchase_intent * 10);
 
   return (
     <div className="page report">
+      {degradedCount > 0 && (
+        <div className="banner warning" style={{ background: "#ffcc0022", color: "#ffcc00", padding: "0.75rem", borderRadius: "8px", marginBottom: "2rem", border: "1px solid #ffcc0044" }}>
+          ⚠️ {degradedCount} of {totalPersonaCount} personas failed to generate and were excluded from these results.
+        </div>
+      )}
       <div className="report-top">
         <div>
           <p className="micro">
@@ -99,7 +124,7 @@ export function ReportView({
           [
             "Simulated variance",
             `${disagreement}%`,
-            disagreement > 20 ? "Material — investigate" : "Limited",
+            disagreement > 44 ? "Material — investigate" : "Limited",
           ],
         ].map(([label, value, note]) => (
           <article key={String(label)}>
@@ -137,11 +162,11 @@ export function ReportView({
         <article className="chart card">
           <header>
             <div>
-              <p className="micro">OBJECTION CLUSTERS</p>
-              <h3>What holds them back</h3>
+              <p className="micro">ASSIGNED OBJECTIONS</p>
+              <h3>How the panel reacted to known barriers</h3>
             </div>
           </header>
-          {objectionRows.map((item) => (
+          {assignedRows.map((item) => (
             <div className="objection-row" key={item.label}>
               <span>{item.label}</span>
               <div>
@@ -155,6 +180,30 @@ export function ReportView({
               <b>{item.percentage}%</b>
             </div>
           ))}
+          {openRows.length > 0 && (
+            <>
+              <header style={{ marginTop: '2rem' }}>
+                <div>
+                  <p className="micro">DISCOVERED OBJECTIONS</p>
+                  <h3>New barriers found by open personas</h3>
+                </div>
+              </header>
+              {openRows.map((item) => (
+                <div className="objection-row" key={item.label}>
+                  <span>{item.label}</span>
+                  <div>
+                    <i
+                      style={{
+                        width: `${item.percentage}%`,
+                        background: item.color,
+                      }}
+                    />
+                  </div>
+                  <b>{item.percentage}%</b>
+                </div>
+              ))}
+            </>
+          )}
         </article>
       </div>
 
@@ -210,7 +259,7 @@ export function ReportView({
       <div className="method-note">
         <span>◌</span>
         <p>
-          <b>Confidence: {confidence}/100 · Simulated variance: {disagreement}%.</b>{" "}
+          <b>Evidence Coverage: {evidenceCoverage}/100 · Simulated variance: {disagreement}%.</b>{" "}
           This report reflects variance in evidence-grounded simulated personas, not
           observed customer behavior. High &ldquo;consistency&rdquo; can mean the
           model agrees with itself, not that reality agrees. Personas are stereotypes,

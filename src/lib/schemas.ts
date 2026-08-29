@@ -62,6 +62,9 @@ export const PersonaProfileSchema = z.object({
   workaround: z.string(),
   groundingType: z.enum(["retrieval", "hypothesis"]),
   retrievedEvidenceIds: z.array(z.string()),
+  degraded: z.boolean().default(false),
+  degradeReason: z.enum(["llm_failure", "parse_failure", "rate_limit"]).optional(),
+  objectionMode: z.enum(["assigned", "open"]).default("assigned"),
 });
 
 // ── Stage 4: Persona Reaction (independent per persona) ─────────────────────
@@ -123,7 +126,9 @@ export const AggregateMetricsSchema = z.object({
   /** Labeled "simulated variance" — computed from independent persona runs, not real-world measurement. */
   disagreementScore: z.number().min(0).max(100),
   /** Function of evidence volume, source diversity, grounding coverage, response consistency. */
-  confidenceScore: z.number().min(0).max(100),
+  evidenceCoverage: z.number().min(0).max(100),
+  degradedCount: z.number().default(0),
+  totalPersonaCount: z.number().default(0),
 });
 
 // ── Stage 6: Objection Clusters ─────────────────────────────────────────────
@@ -136,6 +141,7 @@ export const ObjectionClusterSchema = z.object({
   drivingEvidenceIds: z.array(z.string()),
   expectedImpact: z.enum(["high", "medium", "low"]),
   color: z.string(),
+  mode: z.enum(["assigned", "open"]).default("assigned"),
 });
 
 // ── Stage 7: Derived Recommendations ────────────────────────────────────────
@@ -188,7 +194,7 @@ export const RecommendationSchema = z.object({
 export const ResearchResultSchema = z.object({
   signals: MarketSignalsSchema,
   personas: z.array(PersonaSchema).min(4).max(30),
-  confidence: z.number().min(0).max(100),
+  evidenceCoverage: z.number().min(0).max(100),
   provider: z.string(),
   model: z.string(),
   generatedAt: z.string(),

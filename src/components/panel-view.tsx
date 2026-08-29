@@ -41,7 +41,7 @@ export function PanelView({
           </p>
         </div>
         <ConfidenceBadge
-          confidence={result.confidence}
+          evidenceCoverage={result.evidenceCoverage}
           disagreement={disagreement}
           evidenceCount={input.evidence.length}
         />

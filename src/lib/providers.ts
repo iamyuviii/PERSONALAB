@@ -74,6 +74,12 @@ export class GroqResearchProvider implements ResearchProvider {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Unknown error");
+      console.error("GROQ API FULL ERROR:", {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        body: errorText,
+      });
       throw new Error(
         `Groq API error (${response.status}): ${errorText}`
       );
@@ -83,6 +89,7 @@ export class GroqResearchProvider implements ResearchProvider {
     const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
+      console.error("GROQ EMPTY RESPONSE:", JSON.stringify(data, null, 2));
       throw new Error("Groq returned an empty response.");
     }
 
@@ -95,6 +102,12 @@ export class GroqResearchProvider implements ResearchProvider {
 export function getProvider(): ResearchProvider {
   const apiKey = process.env.GROQ_API_KEY;
   const model = process.env.GROQ_MODEL;
+  
+  console.log("INITIALIZING PROVIDER:", {
+    hasKey: !!apiKey,
+    keyLength: apiKey?.length,
+    model: model
+  });
 
   if (apiKey && apiKey.length > 10) {
     return new GroqResearchProvider(apiKey, model);

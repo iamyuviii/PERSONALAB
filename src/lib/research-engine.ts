@@ -164,8 +164,9 @@ Rules:
     });
     audit.push(createAuditRecord("distributeSegments", { generatedCount: segments.length }, segments, [], provider, start));
     return segments.length > 0 ? segments : [{ name: "General Audience", weight: 100, description: "All users" }];
-  } catch (err) {
-    console.warn("Failed to generate segments from target audience, using fallback.");
+  } catch (e: any) {
+    console.error("PIPELINE ERROR: extractMarketSignals FULL ERROR", e, e instanceof Error ? e.stack : JSON.stringify(e, null, 2));
+    console.warn("Failed to extract market signals. Using fallback.", e);
     const fallbackSegments = [
       { name: "Early Adopters", weight: 30, description: "Eager to try new solutions." },
       { name: "Skeptics", weight: 30, description: "Require strong proof of value." },
@@ -192,16 +193,27 @@ async function generatePersonas(
   const start = Date.now();
 
   const index = await buildIndex(snippets);
-  const limit = pLimit(3); // 3 concurrent calls
+  const limit = pLimit(2); // 2 concurrent calls
   const promises: Promise<Persona>[] = [];
 
+  const segmentPool = Array.from({ length: 12 }, (_, i) => segments[i % segments.length]);
+  for (let i = segmentPool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [segmentPool[i], segmentPool[j]] = [segmentPool[j], segmentPool[i]];
+  }
+
   for (let i = 0; i < 12; i++) {
-    const segment = segments[i % segments.length];
-    const objection = signals.objections[i % signals.objections.length];
+    const segment = segmentPool[i];
+    const objectionMode = i % 2 === 0 ? "assigned" as const : "open" as const;
+    const objection = objectionMode === "assigned" ? signals.objections[i % signals.objections.length] : undefined;
 
     promises.push(limit(async () => {
+      const retrievePayload = objectionMode === "assigned"
+        ? { segment: segment.name, pain: segment.description, barrier: objection! }
+        : { segment: segment.name, pain: segment.description };
+
       const retrieved = await retrieveForContext(
-        { segment: segment.name, pain: segment.description, barrier: objection },
+        retrievePayload,
         snippets,
         index,
         4
@@ -213,12 +225,19 @@ async function generatePersonas(
         ? `\n\nRelevant evidence to ground this persona (ONLY cite these IDs):\n${retrieved.map(r => `[${r.snippet.id}] (${r.snippet.source}): "${r.snippet.text}"`).join("\n")}`
         : "\n\nNo specific evidence matched this persona. Label as hypothesis-based.";
 
+      const objectionContext = objectionMode === "assigned"
+        ? `Main objection to address: ${objection}`
+        : "";
+      const barrierRule = objectionMode === "assigned"
+        ? `- Barrier should be their primary objection to adopting ${input.productName}`
+        : `- Barrier should be whatever objection naturally arises from their situation and evidence`;
+
       const prompt = `Generate a single synthetic persona for product research. Return JSON only.
 
 Product: ${input.productName} — ${input.description}
 Target audience: ${input.targetAudience}
 Segment: ${segment.name} (${segment.description})
-Main objection to address: ${objection}
+${objectionContext}
 ${evidenceContext}
 
 Return this exact JSON:
@@ -228,7 +247,7 @@ Rules:
 - Bio should be 1-2 sentences describing their situation
 - Pain should describe their core frustration
 - Style should describe their decision-making approach
-- Barrier should be their primary objection to adopting ${input.productName}
+${barrierRule}
 - Workaround should name their current solution`;
 
       const intentSeed = 3 + (i % 6); // 3 to 8
@@ -261,7 +280,10 @@ Rules:
           quote: "",
           recommendation: "",
           interview_text: "",
-        }
+        },
+        degraded: true,
+        degradeReason: "llm_failure",
+        objectionMode,
       };
 
       const tryGenerate = async (attempt: number): Promise<Persona> => {
@@ -284,17 +306,29 @@ Rules:
             groundingType,
             retrievedEvidenceIds: retrievedIds,
             score: fallbackPersona.score,
+            degraded: false,
+            objectionMode,
           });
-        } catch (e) {
-          if (attempt === 0) {
-            console.warn(`Retrying persona ${i + 1} generation...`);
-            return tryGenerate(1); // retry once
+        } catch (e: any) {
+          if (attempt < 2) {
+            console.warn(`Retrying persona ${i + 1} generation (attempt ${attempt + 1})...`);
+            const backoff = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+            await new Promise(res => setTimeout(res, backoff));
+            return tryGenerate(attempt + 1);
           }
+          console.error(`PIPELINE ERROR: generatePersonas FULL ERROR for persona ${i + 1}`, e, e instanceof Error ? e.stack : JSON.stringify(e, null, 2));
           console.warn(`Failed to generate persona ${i + 1} after retry, using fallback.`);
-          return fallbackPersona;
+          const isRateLimit = e?.message?.includes("429") || e?.status === 429;
+          const isParseError = e instanceof SyntaxError || e?.message?.includes("JSON");
+          return {
+            ...fallbackPersona,
+            degraded: true,
+            degradeReason: isRateLimit ? "rate_limit" : (isParseError ? "parse_failure" : "llm_failure")
+          };
         }
       };
 
+      await new Promise(res => setTimeout(res, 500));
       return tryGenerate(0);
     }));
   }
@@ -334,7 +368,7 @@ async function simulateReactions(
   audit: AuditRecord[]
 ): Promise<Persona[]> {
   const start = Date.now();
-  const limit = pLimit(3); // 3 concurrent calls
+  const limit = pLimit(2); // 2 concurrent calls
   const promises: Promise<Persona>[] = [];
 
   for (const persona of personas) {
@@ -349,6 +383,10 @@ async function simulateReactions(
       // Skeptic Tone: weighted 0 to 1 based on their barrier/pain
       const skepticInstruction = `As a busy, skeptical real person, you MUST name at least one concrete reason you would NOT buy this product. Be critical.`;
 
+      const barrierInstruction = persona.objectionMode === "assigned"
+        ? `Trust barrier: ${persona.barrier}\n`
+        : "";
+
       const prompt = `You are simulating a single synthetic user's reaction to a product. This is an INDEPENDENT evaluation — do not reference any other personas.
       
 Product: ${input.productName} — ${input.description}
@@ -360,8 +398,7 @@ Segment: ${persona.segment}
 Bio: ${persona.bio}
 Pain point: ${persona.pain}
 Decision style: ${persona.style}
-Trust barrier: ${persona.barrier}
-Current workaround: ${persona.workaround}
+${barrierInstruction}Current workaround: ${persona.workaround}
 ${evidenceContext}
 
 ${skepticInstruction}
@@ -380,7 +417,7 @@ Rules:
 
       const trySimulate = async (attempt: number): Promise<Persona> => {
         try {
-          const temp = 0.4 + (personas.indexOf(persona) * 0.025);
+          const temp = 0.7;
           const raw = await provider.complete(prompt, { temperature: temp, jsonMode: true });
           const parsed = JSON.parse(raw);
 
@@ -401,6 +438,7 @@ Rules:
               recommendation: parsed.recommendation || "",
               interview_text: parsed.interview_text || "",
             },
+            degraded: false,
           };
           
           audit.push(createAuditRecord(
@@ -412,16 +450,26 @@ Rules:
           ));
           
           return updatedPersona;
-        } catch (e) {
-          if (attempt === 0) {
-            console.warn(`Retrying simulate reaction ${persona.id}...`);
-            return trySimulate(1);
+        } catch (e: any) {
+          if (attempt < 2) {
+            console.warn(`Retrying simulate reaction ${persona.id} (attempt ${attempt + 1})...`);
+            const backoff = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+            await new Promise(res => setTimeout(res, backoff));
+            return trySimulate(attempt + 1);
           }
+          console.error(`PIPELINE ERROR: simulateReactions FULL ERROR for persona ${persona.id}`, e, e instanceof Error ? e.stack : JSON.stringify(e, null, 2));
           console.warn(`Failed simulate reaction ${persona.id}, using default scores.`);
-          return persona;
+          const isRateLimit = e?.message?.includes("429") || e?.status === 429;
+          const isParseError = e instanceof SyntaxError || e?.message?.includes("JSON");
+          return {
+            ...persona,
+            degraded: true,
+            degradeReason: isRateLimit ? "rate_limit" : (isParseError ? "parse_failure" : "llm_failure")
+          };
         }
       };
 
+      await new Promise(res => setTimeout(res, 500));
       return trySimulate(0);
     }));
   }
@@ -441,8 +489,28 @@ function aggregateMetrics(
 ): AggregateMetrics {
   const start = Date.now();
 
+  const validPersonas = personas.filter(p => !p.degraded);
+  const totalPersonaCount = personas.length;
+  const degradedCount = totalPersonaCount - validPersonas.length;
+
+  if (validPersonas.length === 0) {
+     const fallbackMetrics: AggregateMetrics = {
+        purchaseIntent: { mean: 0, min: 0, max: 0, values: [] },
+        clarity: { mean: 0, min: 0, max: 0, values: [] },
+        trust: { mean: 0, min: 0, max: 0, values: [] },
+        urgency: { mean: 0, min: 0, max: 0, values: [] },
+        priceSensitivity: { mean: 0, min: 0, max: 0, values: [] },
+        willingnessToPayAvg: 0,
+        disagreementScore: 0,
+        evidenceCoverage: 0,
+        degradedCount,
+        totalPersonaCount,
+     };
+     return AggregateMetricsSchema.parse(fallbackMetrics);
+  }
+
   const values = (key: "clarity_score" | "purchase_intent" | "trust_score" | "urgency_score" | "price_sensitivity") =>
-    personas.map(p => p.score[key]);
+    validPersonas.map(p => p.score[key]);
 
   function dist(vals: number[]) {
     const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -452,13 +520,14 @@ function aggregateMetrics(
   const intentValues = values("purchase_intent");
   const intentMean = intentValues.reduce((a, b) => a + b, 0) / intentValues.length;
   const intentVariance = intentValues.reduce((sum, v) => sum + (v - intentMean) ** 2, 0) / intentValues.length;
-  const disagreement = Math.round(Math.sqrt(intentVariance) * 10);
+  const rawDisagreement = Math.round(Math.sqrt(intentVariance) * 10);
+  const disagreement = Math.round((Math.sqrt(intentVariance) / 4.5) * 100);
 
-  const groundedCount = personas.filter(p => p.groundingType === "retrieval").length;
-  const groundingRatio = groundedCount / personas.length;
-  const sourceDiversity = new Set(personas.flatMap(p => p.retrievedEvidenceIds)).size;
-  const confidence = clamp(
-    Math.round(30 + evidenceCount * 4 + groundingRatio * 20 + sourceDiversity * 2 + (disagreement < 20 ? 5 : -5)),
+  const groundedCount = validPersonas.filter(p => p.groundingType === "retrieval").length;
+  const groundingRatio = groundedCount / validPersonas.length;
+  const sourceDiversity = new Set(validPersonas.flatMap(p => p.retrievedEvidenceIds)).size;
+  const evidenceCoverage = clamp(
+    Math.round(30 + evidenceCount * 4 + groundingRatio * 20 + sourceDiversity * 2 + (rawDisagreement < 20 ? 5 : -5)),
     10, 95
   );
 
@@ -468,13 +537,15 @@ function aggregateMetrics(
     trust: dist(values("trust_score")),
     urgency: dist(values("urgency_score")),
     priceSensitivity: dist(values("price_sensitivity")),
-    willingnessToPayAvg: +(personas.reduce((s, p) => s + p.score.willingness_to_pay, 0) / personas.length).toFixed(1),
+    willingnessToPayAvg: +(validPersonas.reduce((s, p) => s + p.score.willingness_to_pay, 0) / validPersonas.length).toFixed(1),
     disagreementScore: disagreement,
-    confidenceScore: confidence,
+    evidenceCoverage: evidenceCoverage,
+    degradedCount,
+    totalPersonaCount,
   };
 
   const validated = AggregateMetricsSchema.parse(metrics);
-  audit.push(createAuditRecord("aggregateMetrics", { personaCount: personas.length }, validated, [], provider, start));
+  audit.push(createAuditRecord("aggregateMetrics", { personaCount: personas.length, validCount: validPersonas.length }, validated, [], provider, start));
   return validated;
 }
 
@@ -489,48 +560,51 @@ async function clusterObjections(
   const start = Date.now();
   const colors = ["#d9ff5a", "#9b8cff", "#65d6ff", "#ff9a62", "#ff6b8a", "#5ae0d9"];
 
-  // 1. Get embeddings for each persona's objection reason
-  const embedder = await getEmbeddingPipeline();
-  const embeddedPersonas = await Promise.all(personas.map(async (p) => {
-    const textToEmbed = `${p.score.objection_category}. ${p.score.wouldNotBuyReason}`;
-    const output = await embedder(textToEmbed, { pooling: "mean", normalize: true });
-    return {
-      persona: p,
-      embedding: Array.from(output.data as Float32Array),
-      text: textToEmbed
-    };
-  }));
+  const validPersonas = personas.filter(p => !p.degraded);
+  if (validPersonas.length === 0) return [];
 
-  // 2. Simple cosine distance clustering (threshold ~0.65 for MVP)
-  const clustersData: { label: string, personas: Persona[], vectors: number[][] }[] = [];
-  
-  for (const item of embeddedPersonas) {
-    let bestCluster = -1;
-    let bestScore = -1;
+  const embedder = await getEmbeddingPipeline();
+
+  async function clusterSubset(subsetPersonas: Persona[], mode: "assigned" | "open"): Promise<ObjectionCluster[]> {
+    if (subsetPersonas.length === 0) return [];
+
+    const embeddedPersonas = await Promise.all(subsetPersonas.map(async (p) => {
+      const textToEmbed = `${p.score.objection_category}. ${p.score.wouldNotBuyReason}`;
+      const output = await embedder(textToEmbed, { pooling: "mean", normalize: true });
+      return {
+        persona: p,
+        embedding: Array.from(output.data as Float32Array),
+        text: textToEmbed
+      };
+    }));
+
+    const clustersData: { label: string, personas: Persona[], vectors: number[][] }[] = [];
     
-    for (let i = 0; i < clustersData.length; i++) {
-      // Compare to the centroid or just the first element of the cluster for speed
-      const score = cosineSimilarity(item.embedding, clustersData[i].vectors[0]);
-      if (score > bestScore) {
-        bestScore = score;
-        bestCluster = i;
+    for (const item of embeddedPersonas) {
+      let bestCluster = -1;
+      let bestScore = -1;
+      
+      for (let i = 0; i < clustersData.length; i++) {
+        const score = cosineSimilarity(item.embedding, clustersData[i].vectors[0]);
+        if (score > bestScore) {
+          bestScore = score;
+          bestCluster = i;
+        }
+      }
+      
+      if (bestScore > 0.65) {
+        clustersData[bestCluster].personas.push(item.persona);
+        clustersData[bestCluster].vectors.push(item.embedding);
+      } else {
+        clustersData.push({
+          label: item.persona.score.objection_category,
+          personas: [item.persona],
+          vectors: [item.embedding]
+        });
       }
     }
-    
-    if (bestScore > 0.65) {
-      clustersData[bestCluster].personas.push(item.persona);
-      clustersData[bestCluster].vectors.push(item.embedding);
-    } else {
-      clustersData.push({
-        label: item.persona.score.objection_category, // Use the first persona's broad category as label
-        personas: [item.persona],
-        vectors: [item.embedding]
-      });
-    }
-  }
 
-  const clusters: ObjectionCluster[] = clustersData
-    .map((data, i) => {
+    return clustersData.map((data, i) => {
       const affectedSegments = [...new Set(data.personas.map(p => p.segment))];
       const totalWeight = data.personas.reduce((sum, p) => sum + p.weight, 0);
       const frequency = data.personas.length;
@@ -549,17 +623,22 @@ async function clusterObjections(
       return ObjectionClusterSchema.parse({
         label: data.label,
         frequency,
-        percentage: Math.round((frequency / personas.length) * 100),
+        percentage: Math.round((frequency / validPersonas.length) * 100),
         affectedSegments,
         drivingEvidenceIds,
         expectedImpact: impact,
         color: colors[i % colors.length],
+        mode,
       });
-    })
-    .sort((a, b) => b.frequency - a.frequency);
+    });
+  }
 
-  audit.push(createAuditRecord("clusterObjections", { personaCount: personas.length }, clusters, snippets.map(s => s.id), provider, start));
-  return clusters;
+  const assignedClusters = await clusterSubset(validPersonas.filter(p => p.objectionMode === "assigned"), "assigned");
+  const openClusters = await clusterSubset(validPersonas.filter(p => p.objectionMode === "open"), "open");
+  const allClusters = [...assignedClusters, ...openClusters];
+
+  audit.push(createAuditRecord("clusterObjections", { personaCount: personas.length }, { clusters: allClusters.length }, [], provider, start));
+  return allClusters;
 }
 
 // ── Stage 7: Derive Recommendations ─────────────────────────────────────────
@@ -668,7 +747,7 @@ export async function runPipeline(
   const result: ResearchResult = {
     signals,
     personas,
-    confidence: metrics.confidenceScore,
+    evidenceCoverage: metrics.evidenceCoverage,
     provider: provider.metadata.provider,
     model: provider.metadata.model,
     generatedAt: new Date().toISOString(),
