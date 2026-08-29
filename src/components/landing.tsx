@@ -26,13 +26,6 @@ export function Landing({
             <HoverScramble text="Integrity" />
           </a>
         </nav>
-        <ScrambleButton
-          text="Open workspace"
-          className="button ghost"
-          onClick={onOpen}
-        >
-          <b>↗</b>
-        </ScrambleButton>
       </header>
 
       <section className="hero">
@@ -46,10 +39,10 @@ export function Landing({
           <br />
           you build.
         </h1>
-        <p>
+       
           Pressure-test product decisions with an auditable panel of synthetic
-          personas — directional insight, not false certainty.
-        </p>
+          personas — directional insight, not false certainty
+        
         <div className="actions">
           <ScrambleButton
             text="Start a research run"
@@ -183,7 +176,7 @@ function LandingSections({ onOpen }: { onOpen: () => void }) {
         <span>◌</span>
         <div>
           <p className="micro">RESEARCH INTEGRITY</p>
-          <h2>Useful direction, never false certainty.</h2>
+          <h2>Useful direction, never false <BlockScrambleText text="certainty" />.</h2>
           <p>
             Synthetic responses are a structured way to challenge your
             assumptions. They are not a replacement for talking to customers,
@@ -206,7 +199,7 @@ function MarketingFooter({ onOpen }: { onOpen: () => void }) {
         <div className="footer-statement">
           <p className="micro">BUILD WITH BETTER QUESTIONS</p>
           <h2>
-            Less certainty.
+            Less certainty
             <br />
             <i>Better direction.</i>
           </h2>

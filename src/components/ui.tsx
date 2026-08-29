@@ -70,7 +70,7 @@ export function BlockScrambleText({ text, className = "" }: { text: string; clas
               if (block) {
                 block.classList.remove("animate");
                 void block.offsetWidth; // trigger reflow
-                block.style.animationDelay = Math.random() * 0.6 + "s";
+                block.style.animationDelay = Math.random() * 0.5 + "s";
                 block.classList.add("animate");
               }
             });
