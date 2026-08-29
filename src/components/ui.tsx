@@ -88,8 +88,12 @@ export function BlockScrambleText({ text, className = "" }: { text: string; clas
 
   return (
     <span className={`text-wrapper-block ${className}`} ref={containerRef}>
+      {/* Invisible placeholder to prevent layout shifts during scramble */}
+      <span className="text inline-block px-1 opacity-0 pointer-events-none whitespace-pre" aria-hidden="true">
+        {text}
+      </span>
       <span
-        className="text relative z-10 inline-block px-1 transition-colors duration-500"
+        className="text absolute inset-0 z-10 inline-block px-1 transition-colors duration-500 whitespace-pre"
         style={{ color: isHighlighted ? "#11120f" : "inherit" }}
       >
         {shown}
