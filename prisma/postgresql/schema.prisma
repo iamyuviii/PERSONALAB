@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id           String        @id @default(cuid())
+  name         String
+  product      Json
+  evidence     Evidence[]
+  personas     Persona[]
+  runs         Run[]
+  reports      Report[]
+  groundTruths GroundTruth[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Evidence {
+  id        String   @id @default(cuid())
+  projectId String
+  source    String
+  text      String
+  tags      Json
+  embedding Json?
+  heldOut   Boolean  @default(false)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Persona {
+  id                  String       @id @default(cuid())
+  projectId           String
+  profile             Json
+  evidenceIds         Json
+  groundingType       String       @default("hypothesis")
+  retrievedEvidenceIds Json        @default("[]")
+  project             Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  simulations         Simulation[]
+}
+
+model Run {
+  id          String     @id @default(cuid())
+  projectId   String
+  status      String     @default("running")
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stageLogs   StageLog[]
+  createdAt   DateTime   @default(now())
+}
+
+model StageLog {
+  id          String   @id @default(cuid())
+  runId       String
+  stage       String
+  input       Json
+  output      Json
+  sourceIds   Json
+  provider    String
+  model       String?
+  temperature Float?
+  timestamp   DateTime @default(now())
+  durationMs  Int?
+  run         Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model Simulation {
+  id          String   @id @default(cuid())
+  personaId   String
+  rawResponse String
+  scores      Json
+  persona     Persona  @relation(fields: [personaId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  projectId   String
+  data        Json
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
+
+model GroundTruth {
+  id          String   @id @default(cuid())
+  projectId   String
+  metric      String
+  realValue   Float
+  note        String?
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}

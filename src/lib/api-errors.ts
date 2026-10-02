@@ -15,6 +15,7 @@ export function apiError(error: unknown) {
   if (error instanceof PipelineError) return NextResponse.json({ error: error.message }, { status: 502 });
   if (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) return NextResponse.json({ error: "Research was cancelled or exceeded its six-minute time limit. Please retry." }, { status: 504 });
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return NextResponse.json({ error: "Project not found." }, { status: 404 });
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") return NextResponse.json({ error: "Another request updated this study. Please retry." }, { status: 409 });
   console.error("[API] Request failed:", error instanceof Error ? error.name : "Unknown error");
   return NextResponse.json({ error: "Could not save or load research. Check the database configuration and run npm run db:setup." }, { status: 500 });
 }

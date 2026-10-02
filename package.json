@@ -4,13 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run db:generate && next build",
     "start": "next start",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test .test-build/tests/*.test.js",
-    "db:setup": "prisma generate && node scripts/prepare-db.mjs && prisma db push",
-    "postinstall": "prisma generate"
+    "db:generate": "node scripts/database.mjs generate",
+    "db:setup": "node scripts/database.mjs setup",
+    "db:deploy": "node scripts/database.mjs deploy",
+    "postinstall": "npm run db:generate"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",

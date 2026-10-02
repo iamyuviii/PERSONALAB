@@ -28,7 +28,7 @@ export async function saveProject(input: ResearchInput, id?: string) {
   return prisma.$transaction(async tx => {
     if (id && await tx.run.count({ where: { projectId: id, status: "running" } })) throw new HttpError("This project has a research run in progress. Wait for it to finish before saving edits.", 409);
     return projectResponse(await writeProject(tx, input, id));
-  }, { timeout: 10000 });
+  }, { timeout: 10000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 export async function beginRun(input: ResearchInput, id?: string) {
   return prisma.$transaction(async tx => {
@@ -40,7 +40,7 @@ export async function beginRun(input: ResearchInput, id?: string) {
     const project = await writeProject(tx, input, id);
     const run = await tx.run.create({ data: { projectId: project.id } });
     return { projectId: project.id, runId: run.id };
-  }, { timeout: 10000 });
+  }, { timeout: 10000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 async function writeAudit(tx: Prisma.TransactionClient, runId: string, audit: AuditRecord[]) {
   for (const entry of audit) await tx.stageLog.create({ data: {
