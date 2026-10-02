@@ -3,27 +3,34 @@ import { z } from "zod";
 // ── Evidence ────────────────────────────────────────────────────────────────
 
 export const EvidenceSnippetSchema = z.object({
-  id: z.string(),
-  source: z.string().min(1),
-  text: z.string().min(3),
-  tags: z.array(z.string()).default([]),
+  id: z.string().trim().min(1).max(150),
+  source: z.string().trim().min(1).max(300),
+  text: z.string().trim().min(3).max(12000),
+  tags: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
   heldOut: z.boolean().optional().default(false),
-  embedding: z.array(z.number()).optional(),
+  embedding: z.array(z.number().finite()).max(4096).optional(),
 });
 
 // ── Research Input ──────────────────────────────────────────────────────────
 
 export const ResearchInputSchema = z.object({
-  productName: z.string().min(2).max(100),
-  description: z.string().min(10).max(4000),
-  targetAudience: z.string().min(3).max(1000),
+  productName: z.string().trim().min(2).max(100),
+  description: z.string().trim().min(10).max(4000),
+  targetAudience: z.string().trim().min(3).max(1000),
   landingCopy: z.string().max(6000).optional().default(""),
   pricing: z.string().max(200).default(""),
   competitors: z.string().max(1000).default(""),
   questions: z.string().max(3000).default(""),
-  evidence: z.array(EvidenceSnippetSchema).max(50).default([]),
-  segmentWeights: z.record(z.string(), z.number()).optional(),
+  evidence: z.array(EvidenceSnippetSchema).max(50).default([])
+    .refine(items => new Set(items.map(item => item.id)).size === items.length, "Evidence IDs must be unique.")
+    .refine(items => items.reduce((sum, item) => sum + item.text.length, 0) <= 60000, "Evidence must total at most 60,000 characters."),
+  segmentWeights: z.record(z.string().trim().min(1).max(100), z.number().finite().min(0).max(100))
+    .refine(weights => Object.keys(weights).length <= 8, "Use at most eight segments.")
+    .refine(weights => !Object.keys(weights).length || Object.values(weights).some(weight => weight > 0), "At least one segment must have a positive weight.")
+    .optional(),
 });
+
+export const ProjectWriteSchema = z.object({ product: ResearchInputSchema });
 
 // ── Stage 1: Market Signals ─────────────────────────────────────────────────
 
@@ -38,20 +45,22 @@ export const MarketSignalsSchema = z.object({
 // ── Stage 2: Segments ───────────────────────────────────────────────────────
 
 export const SegmentSchema = z.object({
-  name: z.string(),
+  name: z.string().trim().min(1),
   weight: z.number().min(0).max(100),
-  description: z.string(),
+  description: z.string().trim().min(1),
 });
 
 export const SegmentDistributionSchema = z.object({
-  segments: z.array(SegmentSchema).min(2).max(8),
+  segments: z.array(SegmentSchema).min(1).max(8)
+    .refine(segments => new Set(segments.map(s => s.name.trim().toLowerCase())).size === segments.length, "Segment names must be unique.")
+    .refine(segments => segments.some(s => s.weight > 0), "Segment weights must have a positive total."),
 });
 
 // ── Stage 3: Persona Profile ────────────────────────────────────────────────
 
 export const PersonaProfileSchema = z.object({
   id: z.string(),
-  name: z.string(),
+  name: z.string().trim().min(1),
   segment: z.string(),
   weight: z.number().min(0).max(100),
   role: z.string(),
@@ -71,14 +80,14 @@ export const PersonaProfileSchema = z.object({
 
 export const PersonaReactionSchema = z.object({
   personaId: z.string(),
-  clarity_score: z.number().min(1).max(10),
-  purchase_intent: z.number().min(1).max(10),
-  trust_score: z.number().min(1).max(10),
-  price_sensitivity: z.number().min(1).max(10),
-  urgency_score: z.number().min(1).max(10),
-  willingness_to_pay: z.number().min(1).max(10),
-  objection_category: z.string(),
-  wouldNotBuyReason: z.string().min(1),
+  clarity_score: z.number().int().min(1).max(10),
+  purchase_intent: z.number().int().min(1).max(10),
+  trust_score: z.number().int().min(1).max(10),
+  price_sensitivity: z.number().int().min(1).max(10),
+  urgency_score: z.number().int().min(1).max(10),
+  willingness_to_pay: z.number().int().min(1).max(10),
+  objection_category: z.string().trim().min(1),
+  wouldNotBuyReason: z.string().trim().min(1),
   conversion_trigger: z.string(),
   likely_to_try: z.boolean(),
   quote: z.string(),
@@ -91,14 +100,14 @@ export const PersonaReactionSchema = z.object({
 export const PersonaSchema = z.object({
   ...PersonaProfileSchema.shape,
   score: z.object({
-    clarity_score: z.number().min(1).max(10),
-    purchase_intent: z.number().min(1).max(10),
-    trust_score: z.number().min(1).max(10),
-    price_sensitivity: z.number().min(1).max(10),
-    urgency_score: z.number().min(1).max(10),
-    willingness_to_pay: z.number().min(1).max(10),
-    objection_category: z.string(),
-    wouldNotBuyReason: z.string().min(1),
+    clarity_score: z.number().int().min(1).max(10),
+    purchase_intent: z.number().int().min(1).max(10),
+    trust_score: z.number().int().min(1).max(10),
+    price_sensitivity: z.number().int().min(1).max(10),
+    urgency_score: z.number().int().min(1).max(10),
+    willingness_to_pay: z.number().int().min(1).max(10),
+    objection_category: z.string().trim().min(1),
+    wouldNotBuyReason: z.string().trim().min(1),
     conversion_trigger: z.string(),
     likely_to_try: z.boolean(),
     quote: z.string(),
@@ -139,6 +148,7 @@ export const ObjectionClusterSchema = z.object({
   percentage: z.number(),
   affectedSegments: z.array(z.string()),
   drivingEvidenceIds: z.array(z.string()),
+  personaIds: z.array(z.string()).default([]),
   expectedImpact: z.enum(["high", "medium", "low"]),
   color: z.string(),
   mode: z.enum(["assigned", "open"]).default("assigned"),
@@ -177,7 +187,7 @@ export const PipelineResultSchema = z.object({
   personas: z.array(PersonaSchema).min(4).max(30),
   metrics: AggregateMetricsSchema,
   objectionClusters: z.array(ObjectionClusterSchema),
-  recommendations: z.array(DerivedRecommendationSchema).min(1).max(8),
+  recommendations: z.array(DerivedRecommendationSchema).max(8),
   auditTrail: z.array(AuditRecordSchema),
   provider: z.string(),
   model: z.string(),
@@ -192,13 +202,15 @@ export const RecommendationSchema = z.object({
 });
 
 export const ResearchResultSchema = z.object({
+  inputSnapshot: ResearchInputSchema.optional(),
+  evidence: z.array(EvidenceSnippetSchema).optional(),
   signals: MarketSignalsSchema,
   personas: z.array(PersonaSchema).min(4).max(30),
   evidenceCoverage: z.number().min(0).max(100),
   provider: z.string(),
   model: z.string(),
   generatedAt: z.string(),
-  recommendations: z.array(DerivedRecommendationSchema).min(1).max(8),
+  recommendations: z.array(DerivedRecommendationSchema).max(8),
   // v2 additions
   segments: z.array(SegmentSchema).optional(),
   metrics: AggregateMetricsSchema.optional(),

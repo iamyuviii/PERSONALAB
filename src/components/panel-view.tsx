@@ -15,7 +15,8 @@ export function PanelView({
   save: (input: ResearchInput, result: ResearchResult | null) => void;
   onNext: () => void;
 }) {
-  const weights = input.segmentWeights || {};
+  const weights = input.segmentWeights && Object.keys(input.segmentWeights).length
+    ? input.segmentWeights : Object.fromEntries((result.segments || []).map(s => [s.name, s.weight]));
   const entries = Object.entries(weights);
 
   const changeWeight = (name: string, value: number) => {
@@ -43,7 +44,7 @@ export function PanelView({
         <ConfidenceBadge
           evidenceCoverage={result.evidenceCoverage}
           disagreement={disagreement}
-          evidenceCount={input.evidence.length}
+          evidenceCount={(result.evidence || input.evidence).filter(e => !e.heldOut).length}
         />
       </div>
 
@@ -56,8 +57,8 @@ export function PanelView({
             </span>
             <input
               type="range"
-              min="5"
-              max="60"
+              min="0"
+              max="100"
               value={weight}
               onChange={(e) => changeWeight(name, +e.target.value)}
             />
@@ -109,8 +110,8 @@ export function PanelView({
             </dl>
             <footer>
               <EvidenceCitation
-                evidenceIds={p.retrievedEvidenceIds || p.score?.recommendation ? (p as Record<string, unknown>)["evidence"] as string[] || [] : []}
-                evidence={input.evidence}
+                evidenceIds={p.retrievedEvidenceIds}
+                evidence={result.evidence || result.inputSnapshot?.evidence || input.evidence}
                 groundingType={p.groundingType}
               />
             </footer>

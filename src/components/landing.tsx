@@ -1,5 +1,5 @@
 "use client";
-import { Scramble, HoverScramble, ScrambleButton, BlockScrambleText } from "./ui";
+import { HoverScramble, ScrambleButton, BlockScrambleText } from "./ui";
 
 export function Landing({
   onOpen,
@@ -87,8 +87,8 @@ export function Landing({
           </div>
           <div className="dial">
             <div>AI</div>
-            <p>Optional Groq generation</p>
-            <span>LOCAL FALLBACK INCLUDED</span>
+            <p>Independent Groq simulations</p>
+            <span>GROQ API KEY REQUIRED</span>
           </div>
         </div>
       </section>

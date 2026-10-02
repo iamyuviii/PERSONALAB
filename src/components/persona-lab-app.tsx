@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import useSWR from "swr";
 import type { ResearchInput, ResearchResult } from "@/lib/types";
+import { ResearchInputSchema, ResearchResultSchema } from "@/lib/schemas";
 import { Landing } from "./landing";
 import { SetupView } from "./setup-view";
 import { PanelView } from "./panel-view";
@@ -30,6 +31,14 @@ const defaults: ResearchInput = {
   segmentWeights: {},
 };
 
+type SavedProject = { id: string; product: unknown; reports?: { data: unknown }[] };
+const fetcher = async (url: string): Promise<SavedProject[]> => {
+  const response = await fetch(url);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Could not load saved studies.");
+  return data;
+};
+
 export function PersonaLabApp() {
   const [view, setView] = useState<View>("home");
   const [input, setInput] = useState<ResearchInput>(defaults);
@@ -40,80 +49,104 @@ export function PersonaLabApp() {
   const [filter, setFilter] = useState("All");
   const [auditOpen, setAuditOpen] = useState(false);
 
-  const fetcher = (url: string) => fetch(url).then((res) => res.json());
-  const { data: projects, mutate } = useSWR("/api/projects", fetcher);
-  
-  const currentProject = projects?.[0];
+  const { data: projects, error: loadError, mutate } = useSWR("/api/projects", fetcher);
+  const projectId = useRef<string | undefined>(undefined);
+  const hydrated = useRef(false);
+  const revision = useRef(0);
+  const busy = useRef(false);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
 
-  // Initialize input/result from the database once loaded
+  // Revalidation must never overwrite edits or the result of a newer run.
   useEffect(() => {
-    if (currentProject) {
-      if (currentProject.product && currentProject.evidence) {
-        setInput({
-          ...defaults,
-          ...currentProject.product,
-          evidence: currentProject.evidence,
-        });
-      }
-      // Assuming result is saved in a run/report (MVP: we could load latest report if needed)
-      // For now, if there's a result, it should be restored here if implemented.
+    if (!projects || hydrated.current) return;
+    hydrated.current = true;
+    const project = projects[0];
+    if (!project || revision.current > 0) return;
+    projectId.current = project.id;
+    const savedInput = ResearchInputSchema.safeParse(project.product);
+    const savedResult = ResearchResultSchema.safeParse(project.reports?.[0]?.data);
+    if (savedInput.success) {
+      const weights = savedInput.data.segmentWeights;
+      setInput({ ...savedInput.data, segmentWeights: weights && Object.keys(weights).length ? weights :
+        Object.fromEntries(savedResult.success ? (savedResult.data.segments || []).map(s => [s.name, s.weight]) : []) });
     }
-  }, [currentProject]);
+    if (savedResult.success) setResult(savedResult.data);
+  }, [projects]);
 
-  const saveToDb = useCallback(async (nextInput: ResearchInput, nextResult: ResearchResult | null) => {
-    if (currentProject) {
-      await fetch(`/api/projects/${currentProject.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nextInput.productName, product: nextInput }),
-      });
-      mutate();
-    } else {
-      await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nextInput.productName, product: nextInput, evidence: nextInput.evidence }),
-      });
-      mutate();
-    }
-  }, [currentProject, mutate]);
+  useEffect(() => { if (loadError) setError(loadError.message); }, [loadError]);
 
-  const save = (nextInput: ResearchInput, nextResult: ResearchResult | null) => {
-    saveToDb(nextInput, nextResult);
+  const saveToDb = useCallback((nextInput: ResearchInput) => {
+    const pending = saveQueue.current.catch(() => undefined).then(async () => {
+      const id = projectId.current;
+      const response = await fetch(id ? `/api/projects/${id}` : "/api/projects", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product: nextInput }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Could not save this study.");
+      projectId.current = body.id;
+      void mutate();
+    });
+    saveQueue.current = pending;
+    return pending;
+  }, [mutate]);
+
+  const save = (nextInput: ResearchInput) => {
+    void saveToDb(nextInput).catch(cause => { setError(cause.message); setView("setup"); });
   };
 
   const update = <K extends keyof ResearchInput>(
     key: K,
     value: ResearchInput[K]
-  ) => setInput((current) => ({ ...current, [key]: value }));
+  ) => {
+    revision.current++;
+    setInput((current) => ({ ...current, [key]: value }));
+  };
 
   const run = async () => {
+    if (busy.current) return;
+    busy.current = true;
     setError("");
     setRunning(true);
     try {
+      const snapshot = ResearchInputSchema.parse(input);
+      const runRevision = revision.current;
+      // The research endpoint saves this snapshot itself, so a previous draft
+      // save failure must not permanently prevent the user from retrying.
+      await saveQueue.current.catch(() => undefined);
       const response = await fetch("/api/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ ...snapshot, projectId: projectId.current }),
       });
+      const savedId = response.headers.get("X-Project-Id");
+      if (savedId) projectId.current = savedId;
       const body = await response.json();
       if (!response.ok)
         throw new Error(body.error || "Research run failed.");
-      setResult(body);
-      save(input, body);
-      setActive(body.personas[0].id);
+      const nextResult = ResearchResultSchema.parse(body);
+      hydrated.current = true;
+      setResult(nextResult);
+      if (runRevision === revision.current) setInput({ ...snapshot, segmentWeights: Object.fromEntries((nextResult.segments || []).map(s => [s.name, s.weight])) });
+      setActive(nextResult.personas.find(p => !p.degraded)?.id || "P-01");
+      setFilter("All");
       setView("panel");
+      void mutate();
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Research run failed."
       );
     } finally {
+      busy.current = false;
       setRunning(false);
     }
   };
 
+  const reportInput = result?.inputSnapshot || input;
+
   const go = (next: View) => {
-    if (next !== "setup" && next !== "home" && !result) {
+    if (next !== "setup" && next !== "home" && (!result || !result.personas.some(p => !p.degraded))) {
       setView("setup");
       setError("Run your research panel first to unlock this workspace.");
     } else setView(next);
@@ -163,7 +196,7 @@ export function PersonaLabApp() {
             {result?.provider || "Ready to run"}
             <br />
             <small>
-              {result?.model || "Groq optional · local fallback"}
+              {result?.model || "Groq · API key required"}
             </small>
           </div>
           {result?.auditTrail && result.auditTrail.length > 0 && (
@@ -187,7 +220,7 @@ export function PersonaLabApp() {
         <header className="workspace-head">
           <div>
             <p className="micro">
-              {input.productName.toUpperCase()} / {view.toUpperCase()}
+              {(view === "setup" ? input : reportInput).productName.toUpperCase()} / {view.toUpperCase()}
             </p>
             <h2>
               {view === "setup"
@@ -231,22 +264,22 @@ export function PersonaLabApp() {
 
         {view === "simulations" && result && (
           <SimulationsView
-            people={result.personas}
+            people={result.personas.filter(p => !p.degraded)}
             active={active}
             setActive={setActive}
             filter={filter}
             setFilter={setFilter}
             onNext={() => go("report")}
-            confidence={result.confidence}
+            confidence={result.evidenceCoverage}
             disagreement={result.metrics?.disagreementScore}
-            evidence={input.evidence}
+            evidence={result.evidence || reportInput.evidence}
           />
         )}
 
         {view === "report" && result && (
           <ReportView
             result={result}
-            input={input}
+            input={reportInput}
             onRestart={() => go("setup")}
             onShowAudit={() => setAuditOpen(true)}
           />

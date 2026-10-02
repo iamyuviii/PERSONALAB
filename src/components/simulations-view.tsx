@@ -32,14 +32,14 @@ export function SimulationsView({
       ? people
       : people.filter((p) => p.score.objection_category === filter);
   const selected =
-    people.find((p) => p.id === active) || shown[0] || people[0];
+    shown.find((p) => p.id === active) || shown[0] || people[0];
 
   return (
     <div className="page simulations">
       <div className="signal-strip">
         <span>{people.length} independent simulations complete</span>
         <span>
-          ▣ {confidence}% evidence confidence
+          ▣ {confidence}% evidence coverage
         </span>
         {disagreement !== undefined && (
           <span className="variance-pill">

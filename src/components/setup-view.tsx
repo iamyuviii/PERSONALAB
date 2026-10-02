@@ -18,7 +18,7 @@ export function SetupView({
   const addEvidence = () =>
     update("evidence", [
       ...input.evidence,
-      { id: `E-${String(Date.now()).slice(-5)}`, source: "Interview", text: "", tags: [], heldOut: false },
+      { id: `E-${crypto.randomUUID()}`, source: "Interview", text: "", tags: [], heldOut: false },
     ]);
 
   const changeEvidence = (index: number, field: "source" | "text", value: string) =>
@@ -136,7 +136,7 @@ export function SetupView({
         <div>
           <span className="dot" />{" "}
           <b>Research engine</b>
-          <small>· Uses Groq when configured; otherwise runs locally</small>
+          <small>· Requires a configured Groq API key</small>
         </div>
         <ScrambleButton
           className="button lime"

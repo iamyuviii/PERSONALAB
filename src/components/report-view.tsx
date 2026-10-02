@@ -40,7 +40,7 @@ export function ReportView({
   }
 
   const assignedRows = clusters.length > 0
-    ? clusters.filter((c: any) => c.mode === "assigned" || !c.mode)
+    ? clusters.filter(c => c.mode === "assigned" || !c.mode)
     : result.signals.objections.map((label, i) => ({
       label,
       percentage: Math.round(
@@ -52,7 +52,7 @@ export function ReportView({
     }));
 
   const openRows = clusters.length > 0
-    ? clusters.filter((c: any) => c.mode === "open")
+    ? clusters.filter(c => c.mode === "open")
     : [];
 
   const bars = people.map((p) => p.score.purchase_intent * 10);
@@ -92,9 +92,9 @@ export function ReportView({
         <div>
           <p className="micro">EXECUTIVE SIGNAL</p>
           <h2>
-            {result.signals.motivations[0] || "Value"} is compelling.
+            {Number(intent) >= 7 ? "The panel shows interest." : "The offer needs further validation."}
             <br />
-            <i>{result.signals.objections[0] || "Trust"} needs proof.</i>
+            <i>{clusters[0]?.label || result.signals.objections[0] || "Value"} needs proof.</i>
           </h2>
         </div>
         <p>
@@ -229,8 +229,8 @@ export function ReportView({
           <p className="micro">DERIVED RECOMMENDATIONS</p>
           <h3>What to change next</h3>
           <ol>
-            {result.recommendations.map((item) => (
-              <li key={item.title}>
+            {result.recommendations.map((item, index) => (
+              <li key={`${item.title}:${index}`}>
                 <b>{item.title}</b>
                 <span>{item.detail}</span>
                 {item.objectionCluster && (
@@ -277,5 +277,5 @@ function computeDisagreement(people: Persona[]): number {
   const values = people.map((p) => p.score.purchase_intent);
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
   const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
-  return Math.round(Math.sqrt(variance) * 10);
+  return Math.min(100, Math.round(Math.sqrt(variance) / 4.5 * 100));
 }
