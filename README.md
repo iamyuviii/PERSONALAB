@@ -22,7 +22,9 @@ Render free web services cannot persist a SQLite file. Use a hosted PostgreSQL d
 2. In Render's Environment settings, set `DATABASE_URL` to that `postgresql://...` connection string. Keep `GROQ_API_KEY` and set `EMBEDDING_PROVIDER=lexical`.
 3. Set **Build Command** to `npm ci && npm run build`.
 4. Set **Start Command** to `npm run db:deploy && npm run start -- --hostname 0.0.0.0 --port $PORT`.
-5. Redeploy the updated repository. The start command applies the committed PostgreSQL migrations before serving requests.
+5. Redeploy the updated repository. The start command applies the committed PostgreSQL migrations and checks a database read using the generated application client before serving requests.
+
+Prisma uses its separate-process binary query engine to isolate it from Node's native TLS libraries. This addresses a possible runtime compatibility problem when migrations succeed but application queries fail with an OpenSSL error. Keep the provider's SSL settings enabled. Run `npm run db:check` for a read-only connection check; it prints runtime versions and a success/failure result without printing credentials or saved studies. The deployment check has a 45-second limit.
 
 No persistent disk or pre-deploy command is needed. `db:generate` selects the Prisma schema from `DATABASE_URL`, and `db:setup` also supports PostgreSQL. Do not call `scripts/prepare-db.mjs` directly for a hosted database; that helper is exclusively for local SQLite.
 

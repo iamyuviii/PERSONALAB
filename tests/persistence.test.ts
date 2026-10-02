@@ -15,6 +15,9 @@ test("database persists complete studies, stable evidence and failed-run audit w
   const { saveProject, beginRun, finishRun, failRun, projectResponse, latestReport } = await import("../src/lib/project-store");
   try {
     const created = await saveProject(input);
+    const check = execFileSync(process.execPath, ["scripts/database.mjs", "check"], { cwd: process.cwd(), env: process.env, encoding: "utf8" });
+    assert.match(check, /Application database read succeeded/);
+    assert.ok(!check.includes(input.productName));
     const run = await beginRun(input, created.id);
     await assert.rejects(beginRun(input, created.id), /already running/);
     await assert.rejects(saveProject(input, created.id), /in progress/);

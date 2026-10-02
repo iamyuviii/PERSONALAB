@@ -12,6 +12,7 @@
     "db:generate": "node scripts/database.mjs generate",
     "db:setup": "node scripts/database.mjs setup",
     "db:deploy": "node scripts/database.mjs deploy",
+    "db:check": "node scripts/database.mjs check",
     "postinstall": "npm run db:generate"
   },
   "dependencies": {

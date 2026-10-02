@@ -23,8 +23,21 @@ function prisma(...args) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
+function checkDatabase() {
+  const result = spawnSync(process.execPath, [resolve(root, "scripts/check-database.mjs")], {
+    cwd: root, env: process.env, stdio: "inherit", timeout: 45000,
+  });
+  if (result.error) {
+    console.error("[Database check] Could not finish the application database check within 45 seconds.");
+    process.exit(1);
+  }
+  if (result.status !== 0) process.exit(result.status || 1);
+}
+
 if (command === "generate") {
   prisma("generate");
+} else if (command === "check") {
+  checkDatabase();
 } else if (command === "setup" || command === "deploy") {
   if (command === "setup") prisma("generate");
   if (postgres) {
@@ -34,6 +47,7 @@ if (command === "generate") {
     await import("./prepare-db.mjs");
     prisma("db", "push", "--skip-generate");
   }
+  if (command === "deploy") checkDatabase();
 } else {
-  throw new Error("Use database.mjs generate, setup, or deploy.");
+  throw new Error("Use database.mjs generate, setup, deploy, or check.");
 }
